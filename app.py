@@ -180,7 +180,7 @@ if uploaded_file is not None:
                 with st.spinner("Gemini가 데이터를 분석 중입니다..."):
                     try:
                         genai.configure(api_key=api_key)
-                        model = genai.GenerativeModel("gemini-2.0-flash")
+                        model = genai.GenerativeModel("gemini-2.5-flash")
                         response = model.generate_content(prompt)
                         result = response.text
                         st.markdown(result)
