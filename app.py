@@ -180,7 +180,7 @@ if uploaded_file is not None:
         # 숫자 컬럼 쉼표 포맷 적용
         numeric_cols_preview = df.select_dtypes(include="number").columns.tolist()
         format_dict = {col: "{:,.0f}" for col in numeric_cols_preview}
-        st.dataframe(df.style.format(format_dict, na_rep="-"), use_container_width=True)
+        st.dataframe(df.style.format(format_dict, na_rep="-"), use_container_width=True, column_config={col: st.column_config.NumberColumn(col, width="medium") for col in numeric_cols_preview})
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("총 행 수", f"{df.shape[0]:,}")
