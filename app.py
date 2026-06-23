@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import google.generativeai as genai
+import numpy as np
 import io
 
 # ── 장르별 벤치마크 컨텍스트 ─────────────────────────────────
@@ -65,6 +67,37 @@ ANALYSIS_CONTEXT = {
     "UA 효율 분석": "CPI, CPA, 신규 유저 유입량, 채널별 효율을 중심으로 분석하세요."
 }
 
+# ── 이상치 감지 함수 ─────────────────────────────────────────
+def detect_anomalies(df, threshold=2.0):
+    """Z-score 기반 이상치 감지"""
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+    anomalies = []
+
+    for col in numeric_cols:
+        series = df[col].dropna()
+        if len(series) < 3:
+            continue
+        mean = series.mean()
+        std = series.std()
+        if std == 0:
+            continue
+        z_scores = (series - mean) / std
+        outliers = z_scores[abs(z_scores) > threshold]
+        for idx, z in outliers.items():
+            direction = "📈 급등" if z > 0 else "📉 급락"
+            pct_change = ((df[col].iloc[idx] - mean) / mean * 100)
+            anomalies.append({
+                "컬럼": col,
+                "행": idx,
+                "값": round(df[col].iloc[idx], 2),
+                "평균": round(mean, 2),
+                "변화율": f"{pct_change:+.1f}%",
+                "방향": direction,
+                "Z-score": round(z, 2)
+            })
+
+    return pd.DataFrame(anomalies) if anomalies else pd.DataFrame()
+
 # ── 페이지 설정 ──────────────────────────────────────────────
 st.set_page_config(
     page_title="게임 지표 분석기",
@@ -86,7 +119,6 @@ with st.sidebar:
     )
     st.divider()
     st.markdown("**분석 옵션**")
-
     genre = st.selectbox(
         "장르",
         ["키우기 / Idle RPG", "MMORPG", "전략", "퍼즐", "캐주얼 / 하이퍼캐주얼", "슈터"]
@@ -98,6 +130,13 @@ with st.sidebar:
     analysis_focus = st.selectbox(
         "분석 목적",
         ["라이브 지표 모니터링", "수익화 분석", "리텐션 분석", "UA 효율 분석"]
+    )
+    st.divider()
+    st.markdown("**이상치 감지 설정**")
+    anomaly_threshold = st.slider(
+        "민감도 (Z-score 기준)",
+        min_value=1.0, max_value=3.0, value=2.0, step=0.5,
+        help="낮을수록 더 많은 이상치 감지. 기본값 2.0 권장"
     )
     st.divider()
     st.markdown("**사용법**\n1. API Key 입력\n2. 옵션 선택\n3. 파일 업로드\n4. 분석 실행 클릭")
@@ -133,8 +172,9 @@ if uploaded_file is not None:
 
     st.success(f"✅ '{uploaded_file.name}' 로드 완료 — {df.shape[0]}행 × {df.shape[1]}열")
 
-    tab1, tab2, tab3 = st.tabs(["📋 데이터 미리보기", "📊 차트", "🤖 AI 분석"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 데이터 미리보기", "📊 차트", "🚨 이상치 감지", "🤖 AI 분석"])
 
+    # ── TAB 1: 데이터 미리보기 ───────────────────────────────
     with tab1:
         st.subheader("데이터 미리보기")
         st.dataframe(df, use_container_width=True)
@@ -148,6 +188,7 @@ if uploaded_file is not None:
         st.subheader("기초 통계")
         st.dataframe(df.describe(), use_container_width=True)
 
+    # ── TAB 2: 차트 ──────────────────────────────────────────
     with tab2:
         st.subheader("차트 시각화")
         numeric_cols = df.select_dtypes(include="number").columns.tolist()
@@ -189,7 +230,58 @@ if uploaded_file is not None:
             else:
                 st.info("Y축 지표를 하나 이상 선택해 주세요.")
 
+    # ── TAB 3: 이상치 감지 ───────────────────────────────────
     with tab3:
+        st.subheader("🚨 이상치 자동 감지")
+        st.caption(f"Z-score {anomaly_threshold} 기준 — 평균에서 크게 벗어난 수치를 자동으로 탐지합니다.")
+
+        anomaly_df = detect_anomalies(df, threshold=anomaly_threshold)
+
+        if anomaly_df.empty:
+            st.success("✅ 이상치가 감지되지 않았습니다.")
+        else:
+            st.warning(f"⚠️ 총 {len(anomaly_df)}개의 이상치가 감지되었습니다.")
+            st.dataframe(anomaly_df, use_container_width=True)
+
+            # 이상치 시각화
+            st.subheader("이상치 시각화")
+            anomaly_cols = anomaly_df["컬럼"].unique().tolist()
+            numeric_cols_list = df.select_dtypes(include="number").columns.tolist()
+
+            selected_col = st.selectbox("시각화할 컬럼 선택", anomaly_cols)
+
+            if selected_col:
+                series = df[selected_col].dropna()
+                mean = series.mean()
+                std = series.std()
+                upper = mean + anomaly_threshold * std
+                lower = mean - anomaly_threshold * std
+
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    y=df[selected_col],
+                    mode='lines+markers',
+                    name=selected_col,
+                    line=dict(color='royalblue')
+                ))
+                # 이상치 포인트 표시
+                outlier_rows = anomaly_df[anomaly_df["컬럼"] == selected_col]["행"].tolist()
+                fig.add_trace(go.Scatter(
+                    x=outlier_rows,
+                    y=[df[selected_col].iloc[i] for i in outlier_rows],
+                    mode='markers',
+                    marker=dict(color='red', size=12, symbol='x'),
+                    name='이상치'
+                ))
+                # 기준선
+                fig.add_hline(y=mean, line_dash="dash", line_color="green", annotation_text="평균")
+                fig.add_hline(y=upper, line_dash="dot", line_color="orange", annotation_text="상한선")
+                fig.add_hline(y=lower, line_dash="dot", line_color="orange", annotation_text="하한선")
+                fig.update_layout(height=400, title=f"{selected_col} 이상치 현황")
+                st.plotly_chart(fig, use_container_width=True)
+
+    # ── TAB 4: AI 분석 ───────────────────────────────────────
+    with tab4:
         st.subheader("🤖 Gemini AI 분석 리포트")
         st.caption(f"**장르:** {genre} | **단계:** {stage} | **분석 목적:** {analysis_focus}")
 
@@ -197,6 +289,14 @@ if uploaded_file is not None:
             st.warning("사이드바에서 Gemini API Key를 먼저 입력해 주세요.")
         else:
             if st.button("🚀 AI 분석 실행", type="primary", use_container_width=True):
+                # 이상치 정보도 프롬프트에 포함
+                anomaly_summary = ""
+                if not anomaly_df.empty:
+                    anomaly_summary = f"""
+[자동 감지된 이상치]
+{anomaly_df.to_string()}
+"""
+
                 data_summary = f"""
 파일명: {uploaded_file.name}
 행 수: {df.shape[0]}, 열 수: {df.shape[1]}
@@ -209,6 +309,7 @@ if uploaded_file is not None:
 
 [데이터 샘플 (최대 30행)]
 {df.head(30).to_string()}
+{anomaly_summary}
 """
                 prompt = f"""
 당신은 모바일 게임 Business PM입니다.
@@ -234,7 +335,7 @@ if uploaded_file is not None:
 - 데이터로 확인할 수 없는 원인 분석은 하지 마세요.
 - 장르 벤치마크 기준과 실제 데이터 수치를 비교하여 평가해 주세요.
 - 컬럼명을 그대로 인용하지 말고 자연스러운 한국어 지표명으로 표현하세요.
-
+- 자동 감지된 이상치가 있다면 분석에 반영하세요.
 
 [리포트 구성]
 1. **핵심 요약** (3줄 이내)
@@ -242,10 +343,9 @@ if uploaded_file is not None:
 3. **리스크 / 주의 지점** (bullet 2~3개)
 4. **Action Item** (각 항목당 1개씩, 총 3개)
    - [개발] 개발 사이드 관점 액션
-   - [사업PM] 사업 PM 관점 액션
+   - [사업/PM] 사업 PM 관점 액션
    - [마케팅] 마케팅 사이드 관점 액션
-   
-   - 해당 사항이 없는 항목은 생략 가능합니다.입력 내용: 아니 리포트구성 부분만 말이야
+   - 해당 사항이 없는 담당자 항목은 생략 가능
 
 [데이터]
 {data_summary}
@@ -279,6 +379,7 @@ else:
     **분석 내용**
     - 데이터 미리보기 및 기초 통계
     - 인터랙티브 차트 (라인 / 바 / 스캐터)
+    - 이상치 자동 감지 및 시각화
     - 장르·단계·목적별 맞춤 AI 분석 리포트
     - Action Item 자동 생성 [개발 / 사업PM / 마케팅]
     """)
