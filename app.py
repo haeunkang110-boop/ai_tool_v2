@@ -193,42 +193,90 @@ if uploaded_file is not None:
         st.subheader("차트 시각화")
         numeric_cols = df.select_dtypes(include="number").columns.tolist()
         all_cols = df.columns.tolist()
+        non_numeric_cols = df.select_dtypes(exclude="number").columns.tolist()
+        default_x = non_numeric_cols[0] if non_numeric_cols else all_cols[0]
 
         if not numeric_cols:
             st.warning("수치형 컬럼이 없어 차트를 그릴 수 없습니다.")
         else:
-            col_left, col_right = st.columns(2)
-            with col_left:
-                x_col = st.selectbox("X축 (날짜/카테고리)", all_cols, index=0)
-            with col_right:
-                y_options = [c for c in numeric_cols if c != x_col]
-                y_cols = st.multiselect(
-                    "Y축 (지표, 복수 선택 가능)",
-                    y_options,
-                    default=y_options[:min(3, len(y_options))]
-                )
-            chart_type = st.radio("차트 유형", ["라인", "바", "스캐터"], horizontal=True)
+            # 차트 개수 세션 상태 관리
+            if "chart_count" not in st.session_state:
+                st.session_state.chart_count = 1
 
-            if y_cols:
-                try:
-                    df_chart = df[[x_col] + y_cols].copy()
-                    df_chart = df_chart.dropna(subset=y_cols, how='all')
-                    df_melted = df_chart.melt(id_vars=x_col, var_name="지표", value_name="값")
-                    if chart_type == "라인":
-                        fig = px.line(df_melted, x=x_col, y="값", color="지표", markers=True)
-                    elif chart_type == "바":
-                        fig = px.bar(df_melted, x=x_col, y="값", color="지표", barmode="group")
+            col_add, col_reset = st.columns([1, 5])
+            with col_add:
+                if st.button("➕ 차트 추가"):
+                    st.session_state.chart_count += 1
+            with col_reset:
+                if st.button("🗑️ 전체 초기화"):
+                    st.session_state.chart_count = 1
+
+            for i in range(st.session_state.chart_count):
+                with st.container():
+                    st.markdown(f"---\n**차트 {i+1}**")
+                    c1, c2, c3, c4 = st.columns([2, 2, 1, 1])
+
+                    with c1:
+                        default_x_idx = all_cols.index(default_x)
+                        x_col = st.selectbox(f"X축", all_cols, index=default_x_idx, key=f"x_{i}")
+
+                    with c2:
+                        y_options = [c for c in numeric_cols if c != x_col]
+                        y_cols = st.multiselect(
+                            f"Y축 (복수 선택 가능)",
+                            y_options,
+                            default=y_options[:min(2, len(y_options))],
+                            key=f"y_{i}"
+                        )
+
+                    with c3:
+                        chart_type = st.selectbox(
+                            "차트 종류",
+                            ["라인", "바", "스캐터"],
+                            key=f"type_{i}"
+                        )
+
+                    with c4:
+                        display_mode = st.selectbox(
+                            "표시 방식",
+                            ["통합", "개별"],
+                            key=f"mode_{i}"
+                        )
+
+                    if y_cols:
+                        try:
+                            df_chart = df[[x_col] + y_cols].copy()
+                            df_chart = df_chart.dropna(subset=y_cols, how='all')
+
+                            if display_mode == "통합":
+                                df_melted = df_chart.melt(id_vars=x_col, var_name="지표", value_name="값")
+                                if chart_type == "라인":
+                                    fig = px.line(df_melted, x=x_col, y="값", color="지표", markers=True)
+                                elif chart_type == "바":
+                                    fig = px.bar(df_melted, x=x_col, y="값", color="지표", barmode="group")
+                                else:
+                                    fig = px.scatter(df_melted, x=x_col, y="값", color="지표")
+                                fig.update_layout(height=400, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                                st.plotly_chart(fig, use_container_width=True, key=f"chart_unified_{i}")
+
+                            else:  # 개별
+                                cols_per_row = 2
+                                for j in range(0, len(y_cols), cols_per_row):
+                                    row_cols = st.columns(cols_per_row)
+                                    for k, col_name in enumerate(y_cols[j:j+cols_per_row]):
+                                        with row_cols[k]:
+                                            if chart_type == "라인":
+                                                fig = px.line(df_chart, x=x_col, y=col_name, markers=True, title=col_name)
+                                            elif chart_type == "바":
+                                                fig = px.bar(df_chart, x=x_col, y=col_name, title=col_name)
+                                            else:
+                                                fig = px.scatter(df_chart, x=x_col, y=col_name, title=col_name)
+                                            fig.update_layout(height=300)
+                                            st.plotly_chart(fig, use_container_width=True, key=f"chart_ind_{i}_{j}_{k}")
+                        except Exception as e:
+                            st.error(f"차트 생성 오류: {e}")
                     else:
-                        fig = px.scatter(df_melted, x=x_col, y="값", color="지표")
-                    fig.update_layout(
-                        height=450,
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                except Exception as e:
-                    st.error(f"차트 생성 오류: {e}")
-            else:
-                st.info("Y축 지표를 하나 이상 선택해 주세요.")
+                        st.info("Y축 지표를 하나 이상 선택해 주세요.")
 
     # ── TAB 3: 이상치 감지 ───────────────────────────────────
     with tab3:
