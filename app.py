@@ -177,7 +177,10 @@ if uploaded_file is not None:
     # ── TAB 1: 데이터 미리보기 ───────────────────────────────
     with tab1:
         st.subheader("데이터 미리보기")
-        st.dataframe(df, use_container_width=True)
+        # 숫자 컬럼 쉼표 포맷 적용
+        numeric_cols_preview = df.select_dtypes(include="number").columns.tolist()
+        format_dict = {col: "{:,.0f}" for col in numeric_cols_preview}
+        st.dataframe(df.style.format(format_dict, na_rep="-"), use_container_width=True)
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("총 행 수", f"{df.shape[0]:,}")
