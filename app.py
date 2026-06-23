@@ -188,8 +188,7 @@ if uploaded_file is not None:
             st.metric("총 열 수", df.shape[1])
         with col3:
             st.metric("결측치", int(df.isnull().sum().sum()))
-        st.subheader("기초 통계")
-        st.dataframe(df.describe(), use_container_width=True)
+
 
     # ── TAB 2: 차트 ──────────────────────────────────────────
     with tab2:
