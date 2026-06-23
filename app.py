@@ -178,7 +178,7 @@ if uploaded_file is not None:
 
     st.success(f"✅ '{uploaded_file.name}' 로드 완료 — {df.shape[0]}행 × {df.shape[1]}열")
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 데이터 미리보기", "📊 차트", "🚨 이상치 감지", "🤖 AI 분석"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 데이터 미리보기", "📊 차트", "🚨 이상치 감지", "🤖 AI 분석", "💬 자유 질문"])
 
     # ── TAB 1: 데이터 미리보기 ───────────────────────────────
     with tab1:
@@ -423,6 +423,67 @@ if uploaded_file is not None:
                             file_name="ai_analysis_report.txt",
                             mime="text/plain"
                         )
+                    except Exception as e:
+                        st.error(f"❌ 오류 발생: {e}")
+
+    # ── TAB 5: 자유 질문 ────────────────────────────────────
+    with tab5:
+        st.subheader("💬 자유 질문")
+
+        st.info("""
+**📌 이용 안내**
+데이터에 포함된 수치를 바탕으로 한 **단순하고 구체적인 질문**에 답변합니다.
+복잡한 원인 분석이나 데이터에 없는 정보는 정확한 답변이 어려울 수 있습니다.
+
+**✅ 이런 질문을 해보세요**
+- DAU가 가장 높은 날은 언제야?
+- 매출이 가장 많이 떨어진 구간은 어디야?
+- ARPPU 평균이 얼마야?
+- 신규 유저가 가장 많이 유입된 날은?
+""")
+
+        user_question = st.text_input(
+            "질문을 입력하세요",
+            placeholder="예: DAU가 가장 높은 날은 언제야?"
+        )
+
+        if not api_key:
+            st.warning("사이드바에서 Gemini API Key를 먼저 입력해 주세요.")
+        elif user_question:
+            if st.button("🔍 질문하기", type="primary", use_container_width=True):
+                data_summary = f"""
+파일명: {uploaded_file.name}
+행 수: {df.shape[0]}, 열 수: {df.shape[1]}
+
+[컬럼 목록]
+{', '.join(df.columns.tolist())}
+
+[데이터 전체]
+{df.to_string()}
+"""
+                question_prompt = f"""
+아래 게임 지표 데이터를 참고하여 질문에 답변해 주세요.
+
+[제약사항]
+- 반드시 데이터에 명시된 수치만 근거로 사용하세요.
+- 데이터에 없는 정보는 추론하거나 언급하지 마세요.
+- 간결하고 명확하게 답변하세요.
+- 컬럼명을 그대로 인용하지 말고 자연스러운 한국어로 표현하세요.
+
+[질문]
+{user_question}
+
+[데이터]
+{data_summary}
+
+한국어로 답변해 주세요.
+"""
+                with st.spinner("답변 생성 중..."):
+                    try:
+                        genai.configure(api_key=api_key)
+                        model = genai.GenerativeModel("gemini-2.5-flash")
+                        response = model.generate_content(question_prompt)
+                        st.markdown(response.text)
                     except Exception as e:
                         st.error(f"❌ 오류 발생: {e}")
 
