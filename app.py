@@ -105,8 +105,10 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🎮 게임 지표 분석기")
+# 타이틀은 사이드바 이후 동적으로 설정
+title_placeholder = st.empty()
 st.caption("엑셀 또는 CSV 파일을 업로드하면 AI가 PM 관점의 분석 리포트를 생성합니다.")
+
 
 # ── 사이드바 ─────────────────────────────────────────────────
 with st.sidebar:
@@ -119,6 +121,7 @@ with st.sidebar:
     )
     st.divider()
     st.markdown("**분석 옵션**")
+    game_name = st.text_input("게임명", placeholder="예: 던파키우기", help="게임명을 입력하면 분석 리포트에 반영됩니다.")
     genre = st.selectbox(
         "장르",
         ["키우기 / Idle RPG", "MMORPG", "전략", "퍼즐", "캐주얼 / 하이퍼캐주얼", "슈터"]
@@ -140,6 +143,9 @@ with st.sidebar:
     )
     st.divider()
     st.markdown("**사용법**\n1. API Key 입력\n2. 옵션 선택\n3. 파일 업로드\n4. 분석 실행 클릭")
+
+title_text = f"🎮 {game_name} 지표 분석" if game_name else "🎮 게임 지표 분석기"
+title_placeholder.title(title_text)
 
 # ── 파일 업로드 ──────────────────────────────────────────────
 uploaded_file = st.file_uploader(
@@ -366,6 +372,7 @@ if uploaded_file is not None:
 아래 조건에 맞춰 게임 지표 데이터를 분석하고 리포트를 작성해 주세요.
 
 [분석 대상 게임 정보]
+- 게임명: {game_name if game_name else "미입력"}
 - 장르: {genre}
 - 운영 단계: {stage}
 - 분석 목적: {analysis_focus}
